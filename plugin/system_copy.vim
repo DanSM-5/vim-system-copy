@@ -14,6 +14,8 @@ let s:linewise = 'linewise'
 let s:mac = 'mac'
 let s:windows = 'windows'
 let s:linux = 'linux'
+" The class'[[:cntrl:]]' can be used too but it will remove new lines '\n'
+let s:pwshrgx = '[\xFF\xFE\x01\r]' " <ff>,<fe>,^A,^M if powershell is set as shell
 
 function! s:system_copy(type, ...) abort
   let mode = <SID>resolve_mode(a:type, a:0)
@@ -26,44 +28,73 @@ function! s:system_copy(type, ...) abort
   else
     silent exe "normal! `[v`]y"
   endif
-  let command = s:CopyCommandForCurrentOS()
-  silent call system(command, getreg('@'))
+  let os = <SID>currentOS()
+  let command = s:CopyCommandForCurrentOS(os)
+  call <SID>add_to_clipboard(os, command)
   " Call OSC52 copy
   if exists("g:system_copy_enable_osc52") && g:system_copy_enable_osc52 > 0 && exists('*YankOSC52')
     call YankOSC52(getreg('@'))
   endif
   if g:system_copy_silent == 0
-    echohl String | echon 'Copied to clipboard using: ' . command | echohl None
+    echohl String | echon 'Copy: ' . command | echohl None
   endif
   let @@ = unnamed
 endfunction
 
 function! s:system_paste(type, ...) abort
   let mode = <SID>resolve_mode(a:type, a:0)
-  let command = <SID>PasteCommandForCurrentOS()
+  let os = <SID>currentOS()
+  let command = <SID>PasteCommandForCurrentOS(os)
   let unnamed = @@
   silent exe "set paste"
   if mode == s:linewise
     let lines = { 'start': line("'["), 'end': line("']") }
     silent exe lines.start . "," . lines.end . "d"
-    silent exe "normal! O" . system(command)
+    silent exe "normal! O" . <SID>get_clipboard(os, command)
   elseif mode == s:visual || mode == s:blockwise
-    silent exe "normal! `<" . a:type . "`>c" . system(command)
+    silent exe "normal! `<" . a:type . "`>c" . <SID>get_clipboard(os, command)
   else
-    silent exe "normal! `[v`]c" . system(command)
+    silent exe "normal! `[v`]c" . <SID>get_clipboard(os, command)
   endif
   silent exe "set nopaste"
   if g:system_copy_silent == 0
-    echohl String | echon 'Pasted to clipboard using: ' . command | echohl None
+    echohl String | echon 'Paste: ' . command | echohl None
   endif
   let @@ = unnamed
 endfunction
 
 function! s:system_paste_line() abort
-  let command = <SID>PasteCommandForCurrentOS()
-  put =system(command)
+  let os = <SID>currentOS()
+  let command = <SID>PasteCommandForCurrentOS(os)
+  put =<SID>get_clipboard(os, command)
   if g:system_copy_silent == 0
-    echohl String | echon 'Pasted to vim using: ' . command | echohl None
+    echohl String | echon 'Paste: ' . command | echohl None
+  endif
+endfunction
+
+function! s:add_to_clipboard(os, comm)
+  if a:os == s:windows
+    " If using powershell the command will fail due to '<' input redirection
+    " Termporaly set shell to cmd to process command
+    let tmpshellname=&shell
+    let tmpshellcmdflag=&shellcmdflag
+    set shell=cmd
+    set shellcmdflag=/c
+    silent call system(a:comm, getreg('@'))
+    exe 'set shell='.fnameescape(tmpshellname)
+    exe 'set shellcmdflag='.fnameescape(tmpshellcmdflag)
+  else
+    silent call system(a:comm, getreg('@'))
+  endif
+endfunction
+
+function! s:get_clipboard(os, comm)
+  if a:os == s:windows && &shell =~ 'powershell'
+    " If shell is powershell, it will append <ff><fe> and ctrl keys in the text
+    " Use regex to remove ctrl keys and utf16 BOM
+    return substitute(system(a:comm), s:pwshrgx, '', 'g')
+  else
+    return system(a:comm)
   endif
 endfunction
 
@@ -94,16 +125,15 @@ function! s:currentOS()
   return known_os
 endfunction
 
-function! s:CopyCommandForCurrentOS()
+function! s:CopyCommandForCurrentOS(os)
   if exists('g:system_copy#copy_command')
     return g:system_copy#copy_command
   endif
-  let os = <SID>currentOS()
-  if os == s:mac
+  if a:os == s:mac
     return 'pbcopy'
-  elseif os == s:windows
+  elseif a:os == s:windows
     return 'clip'
-  elseif os == s:linux
+  elseif a:os == s:linux
     if !empty($WAYLAND_DISPLAY)
       return 'wl-copy'
     else
@@ -112,16 +142,15 @@ function! s:CopyCommandForCurrentOS()
   endif
 endfunction
 
-function! s:PasteCommandForCurrentOS()
+function! s:PasteCommandForCurrentOS(os)
   if exists('g:system_copy#paste_command')
     return g:system_copy#paste_command
   endif
-  let os = <SID>currentOS()
-  if os == s:mac
+  if a:os == s:mac
     return 'pbpaste'
-  elseif os == s:windows
-    return 'paste'
-  elseif os == s:linux
+  elseif a:os == s:windows
+    return 'powershell.exe -NoLogo -NoProfile -Noninteractive -Command "gcb"'
+  elseif a:os == s:linux
     if !empty($WAYLAND_DISPLAY)
       return 'wl-paste -n'
     else
