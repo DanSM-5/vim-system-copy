@@ -158,7 +158,7 @@ function! s:PasteCommandForCurrentOS(os)
   if a:os == s:mac
     return 'pbpaste'
   elseif a:os == s:windows
-    return 'powershell.exe -NoLogo -NoProfile -Noninteractive -Command "gcb"'
+    return 'powershell.exe -nolo -nopro -nonin -c "gcb"'
   elseif a:os == s:linux
     if !empty($WAYLAND_DISPLAY)
       return 'wl-paste -n'
