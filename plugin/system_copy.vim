@@ -13,6 +13,7 @@ let s:motion = 'motion'
 let s:linewise = 'linewise'
 let s:mac = 'mac'
 let s:windows = 'windows'
+let s:wsl = 'wsl'
 let s:linux = 'linux'
 " The class'[[:cntrl:]]' can be used too but it will remove new lines '\n'
 let s:pwshrgx = '[\xFF\xFE\x01\r]' " <ff>,<fe>,^A,^M if powershell is set as shell
@@ -98,10 +99,12 @@ function! s:get_clipboard(os, comm)
     let tmpshellcmdflag=&shellcmdflag
     set shell=cmd
     set shellcmdflag=/c
-    let clip_content=substitute(system(a:comm, getreg('@')), '\r', '', 'g')
+    let clip_content=system(a:comm)
     exe 'set shell='.fnameescape(tmpshellname)
     exe 'set shellcmdflag='.fnameescape(tmpshellcmdflag)
     return clip_content
+  elseif a:os == s:wsl
+    return substitute(system(a:comm), '\r', '', 'g')
   else
     return system(a:comm)
   endif
@@ -127,6 +130,9 @@ function! s:currentOS()
     let known_os = s:windows
   elseif os ==? 'Linux'
     let known_os = s:linux
+    if system('uname.exe') =~? 'MSYS'
+      let known_os = s:wsl
+    endif
   else
     exe "normal \<Esc>"
     throw "unknown OS: " . os
