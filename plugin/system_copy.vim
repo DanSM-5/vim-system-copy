@@ -89,7 +89,7 @@ function! s:add_to_clipboard(os, comm)
 endfunction
 
 function! s:get_clipboard(os, comm)
-  if a:os == s:windows && &shell =~ 'powershell'
+  if a:os == s:windows
     " If shell is powershell, it will append <ff><fe> and ctrl keys in the text
     " Use regex to remove ctrl keys and utf16 BOM
     " return substitute(system(a:comm), s:pwshrgx, '', 'g')
@@ -98,7 +98,7 @@ function! s:get_clipboard(os, comm)
     let tmpshellcmdflag=&shellcmdflag
     set shell=cmd
     set shellcmdflag=/c
-    let clip_content=system(a:comm, getreg('@'))
+    let clip_content=substitute(system(a:comm, getreg('@')), '\r', '', 'g')
     exe 'set shell='.fnameescape(tmpshellname)
     exe 'set shellcmdflag='.fnameescape(tmpshellcmdflag)
     return clip_content
