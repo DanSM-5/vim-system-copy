@@ -6,6 +6,9 @@ let g:loaded_system_copy = 1
 if !exists("g:system_copy_silent")
   let g:system_copy_silent = 0
 endif
+if !exists("g:wsl_use_windows_clipboard")
+  let g:wsl_use_windows_clipboard = 0
+endif
 
 let s:blockwise = 'blockwise visual'
 let s:visual = 'visual'
@@ -13,7 +16,8 @@ let s:motion = 'motion'
 let s:linewise = 'linewise'
 let s:mac = 'mac'
 let s:windows = 'windows'
-let s:wsl = 'wsl'
+let s:wsl1 = 'wsl1'
+let s:wsl2 = 'wsl2'
 let s:linux = 'linux'
 " The class'[[:cntrl:]]' can be used too but it will remove new lines '\n'
 let s:pwshrgx = '[\xFF\xFE\x01\r]' " <ff>,<fe>,^A,^M if powershell is set as shell
@@ -31,62 +35,84 @@ function! s:system_copy(type, ...) abort
   endif
   let os = <SID>currentOS()
   let command = s:CopyCommandForCurrentOS(os)
-  call <SID>add_to_clipboard(os, command)
-  " Call OSC52 copy
-  if exists("g:system_copy_enable_osc52") && g:system_copy_enable_osc52 > 0 && exists('*YankOSC52')
-    call YankOSC52(getreg('@'))
-  endif
-  if g:system_copy_silent == 0
-    echohl String | echon 'Copy: ' . command | echohl None
+  silent let command_output = s:set_clipboard(os, command)
+  if v:shell_error != 0
+    " Fall back to call OSC52 copy
+    if exists("g:system_copy_enable_osc52") && g:system_copy_enable_osc52 > 0 && exists('*YankOSC52')
+      call YankOSC52(getreg('@'))
+    else
+      echoerr command_output
+    endif
+  else
+    if g:system_copy_silent == 0
+      echohl String | echon 'Copied: ' . command | echohl None
+    endif
   endif
   let @@ = unnamed
 endfunction
 
 function! s:system_paste(type, ...) abort
-  let mode = <SID>resolve_mode(a:type, a:0)
   let os = <SID>currentOS()
   let command = <SID>PasteCommandForCurrentOS(os)
-  let unnamed = @@
-  silent exe "set paste"
-  if mode == s:linewise
-    let lines = { 'start': line("'["), 'end': line("']") }
-    silent exe lines.start . "," . lines.end . "d"
-    silent exe "normal! O" . <SID>get_clipboard(os, command)
-  elseif mode == s:visual || mode == s:blockwise
-    silent exe "normal! `<" . a:type . "`>c" . <SID>get_clipboard(os, command)
+  silent let command_output = <SID>get_clipboard(os, command)
+  if v:shell_error != 0
+    echoerr command_output
   else
-    silent exe "normal! `[v`]c" . <SID>get_clipboard(os, command)
+    let paste_content = command_output
+    let mode = <SID>resolve_mode(a:type, a:0)
+    let unnamed = @@
+    silent exe "set paste"
+    if mode == s:linewise
+      let lines = { 'start': line("'["), 'end': line("']") }
+      silent exe lines.start . "," . lines.end . "d"
+      silent exe "normal! O" . paste_content
+    elseif mode == s:visual || mode == s:blockwise
+      silent exe "normal! `<" . a:type . "`>c" . paste_content
+    else
+      silent exe "normal! `[v`]c" . paste_content
+    endif
+    silent exe "set nopaste"
+    if g:system_copy_silent == 0
+      echohl String | echon 'Pasted: ' . command | echohl None
+    endif
+    let @@ = unnamed
   endif
-  silent exe "set nopaste"
-  if g:system_copy_silent == 0
-    echohl String | echon 'Paste: ' . command | echohl None
-  endif
-  let @@ = unnamed
 endfunction
 
 function! s:system_paste_line() abort
   let os = <SID>currentOS()
   let command = <SID>PasteCommandForCurrentOS(os)
-  put =<SID>get_clipboard(os, command)
-  if g:system_copy_silent == 0
-    echohl String | echon 'Paste: ' . command | echohl None
+  silent let command_output = <SID>get_clipboard(os, command)
+  if v:shell_error != 0
+    echoerr command_output
+  else
+    let paste_content = command_output
+    put =paste_content
+    if g:system_copy_silent == 0
+      echohl String | echon 'Pasted: ' . command | echohl None
+    endif
   endif
 endfunction
 
-function! s:add_to_clipboard(os, comm)
+function! s:set_clipboard(os, comm)
   if a:os == s:windows
     " If using powershell the command will fail due to '<' input redirection
     " Termporaly set shell to cmd to process command
     let tmpshellname=&shell
     let tmpshellcmdflag=&shellcmdflag
-    set shell=cmd
-    set shellcmdflag=/c
-    silent call system(a:comm, getreg('@'))
-    exe 'set shell='.fnameescape(tmpshellname)
-    exe 'set shellcmdflag='.fnameescape(tmpshellcmdflag)
+    try
+      set shell=cmd
+      set shellcmdflag=/c
+      silent let command_output = system(a:comm, getreg('@'))
+    finally
+      exe 'set shell='.fnameescape(tmpshellname)
+      exe 'set shellcmdflag='.fnameescape(tmpshellcmdflag)
+    endtry
   else
-    silent call system(a:comm, getreg('@'))
+    silent let command_output = system(a:comm, getreg('@'))
   endif
+
+  return command_output
 endfunction
 
 function! s:get_clipboard(os, comm)
@@ -97,13 +123,17 @@ function! s:get_clipboard(os, comm)
     " Use cmd temporaly to avoid regex on long strings
     let tmpshellname=&shell
     let tmpshellcmdflag=&shellcmdflag
-    set shell=cmd
-    set shellcmdflag=/c
-    let clip_content=system(a:comm)
-    exe 'set shell='.fnameescape(tmpshellname)
-    exe 'set shellcmdflag='.fnameescape(tmpshellcmdflag)
-    return clip_content
-  elseif a:os == s:wsl
+    try
+      set shell=cmd
+      set shellcmdflag=/c
+      silent let command_output = system(a:comm)
+    finally
+      exe 'set shell='.fnameescape(tmpshellname)
+      exe 'set shellcmdflag='.fnameescape(tmpshellcmdflag)
+    endtry
+    return command_output
+    " for wsl clean carriage return in case using windows clipboard commands
+  elseif a:os == s:wsl1 || a:os == s:wsl2
     return substitute(system(a:comm), '\r', '', 'g')
   else
     return system(a:comm)
@@ -124,14 +154,18 @@ endfunction
 function! s:currentOS()
   let os = substitute(system('uname'), '[\xFF\xFE\x01\r\n]', '', '')
   let known_os = 'unknown'
-  if has("gui_mac") || os ==? 'Darwin'
+  if has('gui_mac') || os ==? 'Darwin'
     let known_os = s:mac
-  elseif has("gui_win32") || os =~? 'cygwin' || os =~? 'MINGW' || os =~? 'MSYS'
+  elseif has('win32') || has('gui_win32') || has('win32unix') || os =~? 'cygwin' || os =~? 'MINGW' || os =~? 'MSYS'
     let known_os = s:windows
   elseif os ==? 'Linux'
-    let known_os = s:linux
-    if system('uname.exe') =~? 'MSYS'
-      let known_os = s:wsl
+    let extended_os = system('uname -a')
+    if extended_os =~? 'WSL2'
+      let known_os = s:wsl2
+    elseif extended_os =~? 'Microsoft'
+      let known_os = s:wsl1
+    else
+      let known_os = s:linux
     endif
   else
     exe "normal \<Esc>"
@@ -146,13 +180,17 @@ function! s:CopyCommandForCurrentOS(os)
   endif
   if a:os == s:mac
     return 'pbcopy'
-  elseif a:os == s:windows
+  elseif a:os == s:windows || a:os == s:wsl1 || g:wsl_use_windows_clipboard
     return 'clip'
-  elseif a:os == s:linux
+  elseif a:os == s:linux || a:os == s:wsl2
     if !empty($WAYLAND_DISPLAY)
       return 'wl-copy'
     else
-      return 'xsel --clipboard --input'
+      if executable('xsel')
+        return 'xsel --clipboard --input'
+      else
+        return 'xclip -i -selection clipboard'
+      endif
     endif
   endif
 endfunction
@@ -163,13 +201,23 @@ function! s:PasteCommandForCurrentOS(os)
   endif
   if a:os == s:mac
     return 'pbpaste'
-  elseif a:os == s:windows
-    return 'powershell.exe -nolo -nopro -nonin -c "gcb"'
-  elseif a:os == s:linux
+  elseif a:os == s:windows || a:os == s:wsl1 || g:wsl_use_windows_clipboard
+    if executable('pbpaste.exe')
+      return 'pbpaste'
+    elseif executable('win32yank')
+      return 'win32yank -i --crlf'
+    else
+      return 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "Get-Clipboard"'
+    endif
+  elseif a:os == s:linux || a:os == a:wsl2
     if !empty($WAYLAND_DISPLAY)
       return 'wl-paste -n'
     else
-      return 'xsel --clipboard --output'
+      if executable('xsel')
+        return 'xsel --clipboard --output'
+      else
+        return 'xclip -o -selection clipboard'
+      endif
     endif
   endif
 endfunction
