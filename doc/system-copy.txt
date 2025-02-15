@@ -2,6 +2,7 @@
 text to the os specific clipboard.
 
 Author:  Chris Toomey
+Co-Author: Eduardo Sanchez
 Licence: MIT
 
 INTRODUCTION                                                    *system-copy*
@@ -31,11 +32,14 @@ For instance:
 CLIPBOARD UTILITIES                         *system-copy-clipboard-utilities*
 
 OSX - `pbcopy` and `pbpaste`
-Windows - `clip` and `paste`
-Linux - `xsel`
+Windows -
+  `pbcopy.exe` and `pbpaste.exe` from pasteboard if available
+  `win32yank` if available or
+  `clip` and `Get-Clipboard` from pwsh or powershell
+Linux - `xsel` or `xclip` for x11 and `wl-copy` and `wl-paste` for wayland
 
-Note: `xsel` can be installed with apt-get install xsel if your system doesn't
-have it installed.
+Note: `xsel` or `xclip` can be installed with apt-get install `program` if your
+system doesn't have any of them installed.
 
 OPTIONS                                                 *system-copy-options*
 
@@ -49,5 +53,14 @@ To declare custom copy command use following example:
 And to declare custom paste command use:
 
 	`let g:system_copy#paste_command='xclip -sel clipboard -o'`
+
+If you want to silence logs when copying or pasting set:
+
+  `let g:system_copy_silent=1`
+
+If you are using wsl but you would like to use the windows specific commands
+(specially useful in wsl1), you can set the following:
+
+  `let g:system_copy_use_windows_clipboard=1`
 
  vim:tw=78:ts=8:ft=help:norl:
