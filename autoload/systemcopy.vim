@@ -67,7 +67,7 @@ function! systemcopy#system_paste(type, ...) abort
   endif
 endfunction
 
-function! systemcopy#system_paste_line() abort
+function! systemcopy#system_paste_line(...) abort
   let os = systemcopy#currentOS()
   let command = <SID>PasteCommandForCurrentOS(os)
   silent let command_output = systemcopy#get_clipboard(os, command)
