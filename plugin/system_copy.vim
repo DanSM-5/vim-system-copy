@@ -6,8 +6,8 @@ let g:loaded_system_copy = 1
 if !exists("g:system_copy_silent")
   let g:system_copy_silent = 0
 endif
-if !exists("g:wsl_use_windows_clipboard")
-  let g:wsl_use_windows_clipboard = 0
+if !exists("g:system_copy_use_windows_clipboard")
+  let g:system_copy_use_windows_clipboard = 0
 endif
 
 let s:blockwise = 'blockwise visual'
@@ -152,18 +152,18 @@ function! s:resolve_mode(type, arg)
 endfunction
 
 function! s:currentOS()
-  let os = substitute(system('uname'), '[\xFF\xFE\x01\r\n]', '', '')
   let known_os = 'unknown'
-  if has('gui_mac') || os ==? 'Darwin'
+  if has('mac') || has("gui_mac") || has('macunix') || $OSTYPE == 'darwin'
     let known_os = s:mac
-  elseif has('win32') || has('gui_win32') || has('win32unix') || os =~? 'cygwin' || os =~? 'MINGW' || os =~? 'MSYS'
+  elseif has('win32') || has('win64') || has('gui_win32') || has('win32unix') || $OS == 'Windows_NT' || $MSYSTEM =~? 'cygwin' || $MSYSTEM =~? 'MINGW' || $MSYSTEM =~? 'MSYS'
     let known_os = s:windows
-  elseif os ==? 'Linux'
-    let extended_os = system('uname -a')
-    if extended_os =~? 'WSL2'
-      let known_os = s:wsl2
-    elseif extended_os =~? 'Microsoft'
-      let known_os = s:wsl1
+  elseif has('linux')
+    if has('wsl') 
+      if system('cat /proc/version') =~ 'WSL2'
+        let known_os = s:wsl2
+      else
+        let known_os = s:wsl1
+      endif
     else
       let known_os = s:linux
     endif
@@ -171,6 +171,7 @@ function! s:currentOS()
     exe "normal \<Esc>"
     throw "unknown OS: " . os
   endif
+
   return known_os
 endfunction
 
@@ -180,8 +181,8 @@ function! s:CopyCommandForCurrentOS(os)
   endif
   if a:os == s:mac
     return 'pbcopy'
-  elseif a:os == s:windows || a:os == s:wsl1 || g:wsl_use_windows_clipboard
-    return 'clip'
+  elseif a:os == s:windows || a:os == s:wsl1 || g:system_copy_use_windows_clipboard
+    return 'clip.exe'
   elseif a:os == s:linux || a:os == s:wsl2
     if !empty($WAYLAND_DISPLAY)
       return 'wl-copy'
@@ -201,13 +202,16 @@ function! s:PasteCommandForCurrentOS(os)
   endif
   if a:os == s:mac
     return 'pbpaste'
-  elseif a:os == s:windows || a:os == s:wsl1 || g:wsl_use_windows_clipboard
+  elseif a:os == s:windows || a:os == s:wsl1 || g:system_copy_use_windows_clipboard
     if executable('pbpaste.exe')
       return 'pbpaste'
     elseif executable('win32yank')
       return 'win32yank -i --crlf'
+    elseif executable('pwsh')
+      " Prefer powershell core
+      return 'pwsh.exe -NoLogo -NoProfile -NonInteractive -Command Get-Clipboard'
     else
-      return 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command "Get-Clipboard"'
+      return 'powershell.exe -NoLogo -NoProfile -NonInteractive -Command Get-Clipboard'
     endif
   elseif a:os == s:linux || a:os == a:wsl2
     if !empty($WAYLAND_DISPLAY)
