@@ -15,7 +15,7 @@ nnoremap <silent> <Plug>SystemCopy :<C-U>set opfunc=systemcopy#system_copy<CR>g@
 nnoremap <silent> <Plug>SystemCopyLine :<C-U>set opfunc=systemcopy#system_copy<Bar>exe 'norm! 'v:count1.'g@_'<CR>
 xnoremap <silent> <Plug>SystemPaste :<C-U>call systemcopy#system_paste(visualmode(),visualmode() ==# 'V' ? 1 : 0)<CR>
 nnoremap <silent> <Plug>SystemPaste :<C-U>set opfunc=systemcopy#system_paste<CR>g@
-nnoremap <silent> <Plug>SystemPasteLine :<C-U>call systemcopy#system_paste_line()<CR>
+nnoremap <silent> <Plug>SystemPasteLine :<C-U>set opfunc=systemcopy#system_paste_line<Bar>call systemcopy#system_paste_line()<CR>
 
 if !hasmapto('<Plug>SystemCopy', 'n') || maparg('cp', 'n') ==# ''
   nmap cp <Plug>SystemCopy
@@ -41,3 +41,4 @@ if !hasmapto('<Plug>SystemPasteLine', 'n') || maparg('cV', 'n') ==# ''
   nmap cV <Plug>SystemPasteLine
 endif
 " vim:ts=2:sw=2:sts=2
+
